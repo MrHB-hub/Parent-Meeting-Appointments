@@ -116,7 +116,7 @@
       const [view, setView] = useState("input");
       const [name, setName] = useState("");
       const [type, setType] = useState("F2F");
-      const [prefs, setPrefs] = useState([{ rank: 1, day: 2, band: null }]);
+      const [prefs, setPrefs] = useState([{ rank: null, day: 2, band: null }]);
       const [editingIdx, setEditingIdx] = useState(null);
       const [saveMsg, setSaveMsg] = useState("");
 
@@ -207,7 +207,7 @@
 
       function deletePupil(idx) {
         setPupils(pupils.filter((_, i) => i !== idx));
-        if (editingIdx === idx) { setEditingIdx(null); setName(""); setType("F2F"); setPrefs([{ rank: 1, day: 2, band: null }]); }
+        if (editingIdx === idx) { setEditingIdx(null); setName(""); setType("F2F"); setPrefs([{ rank: null, day: 2, band: null }]); }
       }
 
       const inp = {
