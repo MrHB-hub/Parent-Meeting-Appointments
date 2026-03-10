@@ -18,6 +18,10 @@
     @media print {
       body { background: #ffffff; }
       .no-print { display: none !important; }
+      .print-only { display: block !important; }
+      body > * { visibility: hidden; }
+      #print-area, #print-area * { visibility: visible; }
+      #print-area { position: absolute; top: 0; left: 0; width: 100%; }
     }
   </style>
 </head>
@@ -34,6 +38,471 @@
       "5:00–5:20pm",
     ];
 
+    const SLOT_TIMES = [
+      ["3:30pm","3:40pm","3:50pm"],
+      ["4:00pm","4:10pm","4:20pm"],
+      ["4:30pm","4:40pm","4:50pm"],
+      ["5:00pm","5:10pm","5:20pm"],
+    ];
+
+    const DAYS = ["Wed 25th", "Thu 26th"];
+    const DAY_OPTIONS = ["Either day", "Wed 25th March", "Thu 26th March"];
+    const BAND_OPTIONS = ["Any time", ...BAND_LABELS];
+
+    const RANK_STYLE = {
+      1:    { bg: "#d1fae5", color: "#065f46", border: "#6ee7b7" },
+      2:    { bg: "#dbeafe", color: "#1e40af", border: "#93c5fd" },
+      3:    { bg: "#fef9c3", color: "#92400e", border: "#fde68a" },
+      null: { bg: "#f1f5f9", color: "#475569", border: "#cbd5e1" },
+    };
+
+    function allSlots() {
+      const slots = [];
+      for (let band = 0; band < 4; band++)
+        for (let s = 0; s < 3; s++)
+          for (let day = 0; day < 2; day++)
+            slots.push({ day, band, slot: s, key: `${day}-${band}-${s}` });
+      return slots;
+    }
+    const ALL_SLOTS = allSlots();
+
+    function scoreSlot(slotKey, schedule) {
+      const [day, band, slot] = slotKey.split("-").map(Number);
+      const timeScore = band * 30 + slot * 10;
+      const latePenalty = band === 3 ? 200 : 0;
+      const neighbours = [
+        `${day}-${band}-${slot - 1}`,
+        `${day}-${band}-${slot + 1}`,
+        `${day}-${band - 1}-2`,
+        `${day}-${band + 1}-0`,
+      ];
+      const clusterBonus = neighbours.some(n => schedule[n]) ? -15 : 0;
+      return timeScore + latePenalty + clusterBonus;
+    }
+
+    function allocate(pupils) {
+      const schedule = {};
+      const result = {};
+      const sorted = [...pupils].sort((a, b) => a.prefs.length - b.prefs.length);
+
+      for (const pupil of sorted) {
+        let candidates = [];
+        for (const pref of pupil.prefs) {
+          const dayOptions = pref.day === 0 ? [0, 1] : [pref.day - 1];
+          const bandOptions = pref.band !== null ? [pref.band] : [0,1,2,3];
+          for (const d of dayOptions)
+            for (const b of bandOptions)
+              for (let s = 0; s < 3; s++) {
+                const key = `${d}-${b}-${s}`;
+                if (!schedule[key]) candidates.push({ key, day: d, band: b, slot: s, rank: pref.rank });
+              }
+        }
+
+        if (candidates.length === 0)
+          candidates = ALL_SLOTS.filter(sl => !schedule[sl.key]).map(sl => ({ ...sl, rank: 99 }));
+
+        if (candidates.length === 0) { result[pupil.name] = null; continue; }
+
+        candidates.sort((a, b) => {
+          // null rank = no preference, treat as low priority but still prefer earlier slots
+          const ra = a.rank === null ? 5 : a.rank;
+          const rb = b.rank === null ? 5 : b.rank;
+          const rankDiff = ra - rb;
+          if (rankDiff !== 0) return rankDiff;
+          return scoreSlot(a.key, schedule) - scoreSlot(b.key, schedule);
+        });
+
+        const best = candidates[0];
+        schedule[best.key] = pupil.name;
+        result[pupil.name] = best;
+      }
+      return { result, schedule };
+    }
+
+    function App() {
+      const [pupils, setPupils] = useState([]);
+      const [view, setView] = useState("input");
+      const [name, setName] = useState("");
+      const [type, setType] = useState("F2F");
+      const [prefs, setPrefs] = useState([{ rank: null, day: 0, band: null }]);
+      const [editingIdx, setEditingIdx] = useState(null);
+      const [saveMsg, setSaveMsg] = useState("");
+
+      function saveData() {
+        const json = JSON.stringify({ pupils }, null, 2);
+        const blob = new Blob([json], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "parents_evening_data.json";
+        a.click();
+        URL.revokeObjectURL(url);
+        setSaveMsg("✓ Saved!");
+        setTimeout(() => setSaveMsg(""), 2000);
+      }
+
+      function loadData(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = ev => {
+          try {
+            const data = JSON.parse(ev.target.result);
+            if (data.pupils) {
+              setPupils(data.pupils);
+              setSaveMsg("✓ Loaded!");
+              setTimeout(() => setSaveMsg(""), 2000);
+            }
+          } catch {
+            setSaveMsg("⚠ Could not read file");
+            setTimeout(() => setSaveMsg(""), 3000);
+          }
+        };
+        reader.readAsText(file);
+        e.target.value = "";
+      }
+
+      const { result: allocation } = allocate(pupils);
+
+      function buildGrid() {
+        const grid = {};
+        pupils.forEach(p => {
+          const slot = allocation[p.name];
+          if (slot) grid[slot.key] = { name: p.name, type: p.type };
+        });
+        return grid;
+      }
+
+      const grid = buildGrid();
+      const placed = pupils.filter(p => allocation[p.name] !== null);
+      const unplaced = pupils.filter(p => allocation[p.name] === null);
+
+      function addPref() {
+        if (prefs.length >= 3) return;
+        setPrefs([...prefs, { rank: null, day: 0, band: null }]);
+      }
+
+      function removePref(i) {
+        setPrefs(prefs.filter((_, idx) => idx !== i));
+      }
+
+      function updatePref(i, field, val) {
+        const updated = [...prefs];
+        updated[i] = { ...updated[i], [field]: val };
+        setPrefs(updated);
+      }
+
+      function submitPupil() {
+        if (!name.trim()) return;
+        const pupil = { name: name.trim(), type, prefs };
+        if (editingIdx !== null) {
+          const updated = [...pupils];
+          updated[editingIdx] = pupil;
+          setPupils(updated);
+          setEditingIdx(null);
+        } else {
+          setPupils([...pupils, pupil]);
+        }
+        setName(""); setType("F2F"); setPrefs([{ rank: null, day: 0, band: null }]);
+      }
+
+      function editPupil(idx) {
+        const p = pupils[idx];
+        setName(p.name); setType(p.type); setPrefs(p.prefs);
+        setEditingIdx(idx);
+        setView("input");
+      }
+
+      function deletePupil(idx) {
+        setPupils(pupils.filter((_, i) => i !== idx));
+        if (editingIdx === idx) { setEditingIdx(null); setName(""); setType("F2F"); setPrefs([{ rank: null, day: 0, band: null }]); }
+      }
+
+      const inp = {
+        background: "#ffffff",
+        border: "1px solid #b8d8b8",
+        borderRadius: "8px",
+        padding: "0.5rem 0.75rem",
+        color: "#1a3a1a",
+        fontSize: "0.9rem",
+        outline: "none",
+        fontFamily: "Inter, sans-serif",
+        width: "100%",
+      };
+
+      return (
+        <div style={{ minHeight:"100vh", fontFamily:"Inter,sans-serif", color:"#1a3a1a", padding:"1.5rem" }}>
+
+          {/* Header */}
+          <div className="no-print" style={{ marginBottom:"1.5rem", background:"#2d7a2d", borderRadius:"14px", padding:"1.25rem 1.5rem", color:"#ffffff" }}>
+            <div style={{ fontSize:"0.7rem", letterSpacing:"0.2em", color:"rgba(255,255,255,0.7)", textTransform:"uppercase", marginBottom:"0.3rem" }}>
+              Sugar Hill Primary · Year 5
+            </div>
+            <h1 style={{ fontSize:"1.6rem", fontWeight:"bold", color:"#ffffff", letterSpacing:"-0.02em" }}>
+              Parents' Evening Scheduler
+            </h1>
+            <div style={{ fontSize:"0.8rem", color:"rgba(255,255,255,0.75)", marginTop:"0.25rem" }}>
+              Wed 25th &amp; Thu 26th March · 3:30pm – 5:20pm · 24 slots total
+            </div>
+          </div>
+
+          {/* Save / Load */}
+          <div className="no-print" style={{ display:"flex", gap:"0.6rem", alignItems:"center", marginBottom:"1.25rem", flexWrap:"wrap" }}>
+            <button onClick={saveData} style={{
+              background:"#2d7a2d", border:"1px solid #1f5c1f",
+              borderRadius:"8px", padding:"0.45rem 1rem", color:"#ffffff",
+              cursor:"pointer", fontSize:"0.82rem", fontFamily:"Inter,sans-serif", fontWeight:"bold",
+            }}>💾 Save data</button>
+            <label style={{
+              background:"#ffffff", border:"1px solid #b8d8b8",
+              borderRadius:"8px", padding:"0.45rem 1rem", color:"#2d7a2d",
+              cursor:"pointer", fontSize:"0.82rem", fontFamily:"Inter,sans-serif", fontWeight:"bold",
+            }}>
+              📂 Load data
+              <input type="file" accept=".json" onChange={loadData} style={{ display:"none" }} />
+            </label>
+            {saveMsg && (
+              <span style={{ fontSize:"0.8rem", color: saveMsg.startsWith("⚠") ? "#c0392b" : "#2d7a2d", fontStyle:"italic" }}>
+                {saveMsg}
+              </span>
+            )}
+          </div>
+
+          {/* Stats */}
+          <div className="no-print" style={{ display:"flex", gap:"0.75rem", marginBottom:"1.5rem", flexWrap:"wrap" }}>
+            {[
+              { label:"Slips in",   val: pupils.length,          col:"#2d7a2d" },
+              { label:"Placed",     val: placed.length,          col:"#1f5c1f" },
+              { label:"Slots free", val: 24 - placed.length,     col:"#6b7280" },
+              { label:"Unplaced",   val: unplaced.length,        col:"#c0392b" },
+            ].map(s => (
+              <div key={s.label} style={{ background:"#ffffff", border:"1px solid #b8d8b8", borderRadius:"10px", padding:"0.6rem 1rem", minWidth:"90px" }}>
+                <div style={{ fontSize:"1.5rem", fontWeight:"bold", color:s.col }}>{s.val}</div>
+                <div style={{ fontSize:"0.7rem", color:"#6b7280" }}>{s.label}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Tabs */}
+          <div className="no-print" style={{ display:"flex", gap:"0.5rem", marginBottom:"1.5rem" }}>
+            {[["input","📝 Add Slips"],["schedule","📅 Schedule"]].map(([v, label]) => (
+              <button key={v} onClick={() => setView(v)} style={{
+                background: view===v ? "#2d7a2d" : "#ffffff",
+                border: view===v ? "1px solid #1f5c1f" : "1px solid #b8d8b8",
+                borderRadius:"8px", padding:"0.5rem 1.25rem",
+                color: view===v ? "#ffffff" : "#2d7a2d",
+                cursor:"pointer", fontSize:"0.85rem", fontFamily:"Inter,sans-serif", fontWeight: view===v ? "bold" : "normal",
+              }}>{label}</button>
+            ))}
+          </div>
+
+          {/* ── INPUT VIEW ── */}
+          {view === "input" && (
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"1.5rem" }}>
+
+              {/* Form */}
+              <div style={{ background:"#ffffff", border:"1px solid #b8d8b8", borderRadius:"14px", padding:"1.25rem" }}>
+                <h2 style={{ margin:"0 0 1rem", fontSize:"1rem", color:"#1a3a1a", fontWeight:"bold" }}>
+                  {editingIdx !== null ? "✏️ Edit slip" : "➕ New slip"}
+                </h2>
+
+                <div style={{ marginBottom:"0.75rem" }}>
+                  <label style={{ fontSize:"0.75rem", color:"#4a7a4a", display:"block", marginBottom:"0.3rem", fontWeight:"bold" }}>Pupil name</label>
+                  <input value={name} onChange={e => setName(e.target.value)}
+                    placeholder="e.g. Amelia Jones" style={inp}
+                    onKeyDown={e => e.key === "Enter" && submitPupil()} />
+                </div>
+
+                <div style={{ marginBottom:"1rem" }}>
+                  <label style={{ fontSize:"0.75rem", color:"#4a7a4a", display:"block", marginBottom:"0.3rem", fontWeight:"bold" }}>Meeting type</label>
+                  <div style={{ display:"flex", gap:"0.5rem" }}>
+                    {["F2F","Tel"].map(t => (
+                      <button key={t} onClick={() => setType(t)} style={{
+                        flex:1, padding:"0.5rem",
+                        background: type===t ? (t==="F2F" ? "#e8f5e8" : "#fffbe6") : "#f9f9f9",
+                        border: type===t ? (t==="F2F" ? "2px solid #2d7a2d" : "2px solid #d4a017") : "1px solid #b8d8b8",
+                        borderRadius:"8px",
+                        color: type===t ? (t==="F2F" ? "#1f5c1f" : "#8a6800") : "#6b7280",
+                        cursor:"pointer", fontFamily:"Inter,sans-serif", fontSize:"0.85rem", fontWeight: type===t ? "bold" : "normal",
+                      }}>{t==="F2F" ? "● Face-to-Face" : "✆ Telephone"}</button>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{ marginBottom:"1rem" }}>
+                  <label style={{ fontSize:"0.75rem", color:"#4a7a4a", display:"block", marginBottom:"0.5rem", fontWeight:"bold" }}>Preferences</label>
+                  {prefs.map((pref, i) => {
+                    const rs = RANK_STYLE[pref.rank] || RANK_STYLE[null];
+                    return (
+                      <div key={i} style={{ display:"flex", gap:"0.5rem", alignItems:"center", marginBottom:"0.5rem" }}>
+                        <select value={pref.rank ?? "null"} onChange={e => updatePref(i,"rank", e.target.value==="null" ? null : Number(e.target.value))}
+                          style={{ ...inp, width:"80px", fontSize:"0.75rem", fontWeight:"bold",
+                            background: rs.bg, color: rs.color, border:`1px solid ${rs.border}` }}>
+                          <option value="null">No pref</option>
+                          <option value="1">1st</option>
+                          <option value="2">2nd</option>
+                          <option value="3">3rd</option>
+                        </select>
+                        <select value={pref.day} onChange={e => updatePref(i,"day",Number(e.target.value))}
+                          style={{ ...inp, width:"auto", flex:1 }}>
+                          {DAY_OPTIONS.map((d,di) => <option key={di} value={di}>{d}</option>)}
+                        </select>
+                        <select value={pref.band ?? ""} onChange={e => updatePref(i,"band", e.target.value==="" ? null : Number(e.target.value))}
+                          style={{ ...inp, width:"auto", flex:1 }}>
+                          {BAND_OPTIONS.map((bl,bi) => <option key={bi} value={bi===0 ? "" : bi-1}>{bl}</option>)}
+                        </select>
+                        {prefs.length > 1 && (
+                          <button onClick={() => removePref(i)} style={{ background:"none", border:"none", color:"#ef4444", cursor:"pointer", fontSize:"1rem", padding:"0 4px" }}>✕</button>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {prefs.length < 3 && (
+                    <button onClick={addPref} style={{
+                      background:"#f0f7f0", border:"1px dashed #4a9e4a",
+                      borderRadius:"8px", color:"#2d7a2d", cursor:"pointer",
+                      fontSize:"0.8rem", padding:"0.4rem 0.75rem", fontFamily:"Inter,sans-serif",
+                      width:"100%", marginTop:"0.25rem",
+                    }}>+ Add preference</button>
+                  )}
+                </div>
+
+                <button onClick={submitPupil} disabled={!name.trim()} style={{
+                  width:"100%", padding:"0.65rem",
+                  background: name.trim() ? "#2d7a2d" : "#e8f5e8",
+                  border: name.trim() ? "1px solid #1f5c1f" : "1px solid #b8d8b8",
+                  borderRadius:"10px", color: name.trim() ? "#ffffff" : "#9ab89a",
+                  cursor: name.trim() ? "pointer" : "not-allowed",
+                  fontSize:"0.95rem", fontFamily:"Inter,sans-serif", fontWeight:"bold",
+                }}>
+                  {editingIdx !== null ? "Update slip" : "Add slip & allocate"}
+                </button>
+                {editingIdx !== null && (
+                  <button onClick={() => { setEditingIdx(null); setName(""); setType("F2F"); setPrefs([{rank:null,day:0,band:null}]); }} style={{
+                    width:"100%", padding:"0.5rem", marginTop:"0.5rem",
+                    background:"#ffffff", border:"1px solid #b8d8b8",
+                    borderRadius:"10px", color:"#6b7280", cursor:"pointer",
+                    fontSize:"0.85rem", fontFamily:"Inter,sans-serif",
+                  }}>Cancel edit</button>
+                )}
+              </div>
+
+              {/* Pupil list */}
+              <div>
+                <h2 style={{ margin:"0 0 0.75rem", fontSize:"1rem", color:"#1a3a1a", fontWeight:"bold" }}>Slips returned ({pupils.length})</h2>
+                {pupils.length === 0 ? (
+                  <div style={{ border:"2px dashed #b8d8b8", borderRadius:"12px", padding:"3rem 1rem", textAlign:"center", color:"#9ab89a", fontStyle:"italic" }}>
+                    No slips yet
+                  </div>
+                ) : (
+                  <div style={{ display:"flex", flexDirection:"column", gap:"0.5rem", maxHeight:"65vh", overflowY:"auto" }}>
+                    {pupils.map((p, idx) => {
+                      const slot = allocation[p.name];
+                      const isPlaced = slot !== null;
+                      return (
+                        <div key={p.name} style={{
+                          background: isPlaced ? "#f0faf0" : "#fff5f5",
+                          border: isPlaced ? "1px solid #a8d8a8" : "1px solid #f5b8b8",
+                          borderRadius:"10px", padding:"0.75rem 1rem",
+                          display:"flex", alignItems:"center", gap:"0.75rem",
+                        }}>
+                          <div style={{ flex:1 }}>
+                            <div style={{ display:"flex", alignItems:"center", gap:"0.5rem", flexWrap:"wrap" }}>
+                              <span style={{ fontWeight:"bold", fontSize:"0.9rem", color:"#1a3a1a" }}>{p.name}</span>
+                              <span style={{
+                                fontSize:"0.68rem", padding:"1px 7px", borderRadius:"12px",
+                                background: p.type==="F2F" ? "#e8f5e8" : "#fffbe6",
+                                color: p.type==="F2F" ? "#1f5c1f" : "#8a6800",
+                                border: p.type==="F2F" ? "1px solid #a8d8a8" : "1px solid #e2c96a",
+                              }}>{p.type==="F2F" ? "● F2F" : "✆ Tel"}</span>
+                            </div>
+                            <div style={{ fontSize:"0.75rem", color:"#6b7280", marginTop:"0.2rem" }}>
+                              {isPlaced
+                                ? `→ ${DAYS[slot.day]} · ${SLOT_TIMES[slot.band][slot.slot]}`
+                                : "⚠ Could not be placed"}
+                            </div>
+                          </div>
+                          <button onClick={() => editPupil(idx)} style={{ background:"none", border:"none", color:"#2d7a2d", cursor:"pointer", fontSize:"0.8rem", fontFamily:"Inter,sans-serif", fontWeight:"bold" }}>Edit</button>
+                          <button onClick={() => deletePupil(idx)} style={{ background:"none", border:"none", color:"#c0392b", cursor:"pointer", fontSize:"0.8rem" }}>✕</button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── SCHEDULE VIEW ── */}
+          {view === "schedule" && (
+            <div>
+              <div className="no-print" style={{ display:"flex", justifyContent:"flex-end", marginBottom:"1rem" }}>
+                <button onClick={() => window.print()} style={{
+                  background:"#2d7a2d", border:"1px solid #1f5c1f",
+                  borderRadius:"8px", padding:"0.5rem 1.25rem", color:"#ffffff",
+                  cursor:"pointer", fontSize:"0.85rem", fontFamily:"Inter,sans-serif", fontWeight:"bold",
+                }}>Print schedule</button>
+              </div>
+            <div id="print-area" style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"1.5rem" }}>
+              {DAYS.map((dayLabel, dayIdx) => (
+                <div key={dayIdx} style={{ background:"#ffffff", border:"1px solid #b8d8b8", borderRadius:"14px", overflow:"hidden" }}>
+                  <div style={{ background:"#2d7a2d", padding:"0.75rem 1rem", fontSize:"0.95rem", fontWeight:"bold", color:"#ffffff", borderBottom:"1px solid #1f5c1f" }}>
+                    {dayIdx === 0 ? "Wednesday 25th March" : "Thursday 26th March"}
+                  </div>
+                  {BAND_LABELS.map((band, bandIdx) => (
+                    <div key={bandIdx}>
+                      <div style={{ background:"#e8f5e8", padding:"0.4rem 1rem", fontSize:"0.72rem", color:"#1f5c1f", fontWeight:"bold", letterSpacing:"0.05em", borderBottom:"1px solid #c8e8c8" }}>
+                        {band}
+                      </div>
+                      {SLOT_TIMES[bandIdx].map((time, slotIdx) => {
+                        const key = `${dayIdx}-${bandIdx}-${slotIdx}`;
+                        const appt = grid[key];
+                        return (
+                          <div key={slotIdx} style={{
+                            display:"flex", alignItems:"center", gap:"0.75rem",
+                            padding:"0.5rem 1rem",
+                            borderBottom:"1px solid #f0f7f0",
+                            background: appt ? (appt.type==="F2F" ? "#f0faf0" : "#fffbe6") : "#ffffff",
+                          }}>
+                            <span style={{ fontSize:"0.78rem", color:"#9ab89a", minWidth:"52px", fontFamily:"monospace" }}>{time}</span>
+                            {appt ? (
+                              <>
+                                <span style={{ fontSize:"0.88rem", fontWeight:"bold", flex:1, color: appt.type==="F2F" ? "#1f5c1f" : "#8a6800" }}>{appt.name}</span>
+                                <span style={{
+                                  fontSize:"0.68rem", padding:"1px 7px", borderRadius:"10px",
+                                  background: appt.type==="F2F" ? "#e8f5e8" : "#fffbe6",
+                                  color: appt.type==="F2F" ? "#1f5c1f" : "#8a6800",
+                                  border: appt.type==="F2F" ? "1px solid #a8d8a8" : "1px solid #e2c96a",
+                                }}>{appt.type==="F2F" ? "● F2F" : "✆ Tel"}</span>
+                              </>
+                            ) : (
+                              <span style={{ fontSize:"0.8rem", color:"#c8e8c8", fontStyle:"italic" }}>—</span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+            </div>
+          )}
+
+          {unplaced.length > 0 && (
+            <div style={{ marginTop:"1.5rem", background:"#fff5f5", border:"1px solid #f5b8b8", borderRadius:"10px", padding:"0.75rem 1rem", fontSize:"0.85rem", color:"#c0392b" }}>
+              ⚠ <strong>{unplaced.length} pupil{unplaced.length > 1 ? "s" : ""} could not be placed</strong> in a preferred slot — try editing their preferences.{" "}
+              {unplaced.map(p => p.name).join(", ")}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>
     const SLOT_TIMES = [
       ["3:30pm","3:40pm","3:50pm"],
       ["4:00pm","4:10pm","4:20pm"],
