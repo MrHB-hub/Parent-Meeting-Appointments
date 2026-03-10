@@ -4,13 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Parents' Evening Scheduler</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: #f0f7f0; min-height: 100vh; }
+    body { background: #f0f7f0; min-height: 100vh; font-family: 'Inter', system-ui, -apple-system, sans-serif; }
     select option { background: #ffffff; color: #1a3a1a; }
     ::-webkit-scrollbar { width: 6px; }
     ::-webkit-scrollbar-track { background: #e8f5e8; }
@@ -219,12 +215,12 @@
         color: "#1a3a1a",
         fontSize: "0.9rem",
         outline: "none",
-        fontFamily: "Georgia, serif",
+        fontFamily: "Inter, sans-serif",
         width: "100%",
       };
 
       return (
-        <div style={{ minHeight:"100vh", fontFamily:"Georgia,serif", color:"#1a3a1a", padding:"1.5rem" }}>
+        <div style={{ minHeight:"100vh", fontFamily:"Inter,sans-serif", color:"#1a3a1a", padding:"1.5rem" }}>
 
           {/* Header */}
           <div style={{ marginBottom:"1.5rem", background:"#2d7a2d", borderRadius:"14px", padding:"1.25rem 1.5rem", color:"#ffffff" }}>
@@ -244,12 +240,12 @@
             <button onClick={saveData} style={{
               background:"#2d7a2d", border:"1px solid #1f5c1f",
               borderRadius:"8px", padding:"0.45rem 1rem", color:"#ffffff",
-              cursor:"pointer", fontSize:"0.82rem", fontFamily:"Georgia,serif", fontWeight:"bold",
+              cursor:"pointer", fontSize:"0.82rem", fontFamily:"Inter,sans-serif", fontWeight:"bold",
             }}>💾 Save data</button>
             <label style={{
               background:"#ffffff", border:"1px solid #b8d8b8",
               borderRadius:"8px", padding:"0.45rem 1rem", color:"#2d7a2d",
-              cursor:"pointer", fontSize:"0.82rem", fontFamily:"Georgia,serif", fontWeight:"bold",
+              cursor:"pointer", fontSize:"0.82rem", fontFamily:"Inter,sans-serif", fontWeight:"bold",
             }}>
               📂 Load data
               <input type="file" accept=".json" onChange={loadData} style={{ display:"none" }} />
@@ -284,7 +280,7 @@
                 border: view===v ? "1px solid #1f5c1f" : "1px solid #b8d8b8",
                 borderRadius:"8px", padding:"0.5rem 1.25rem",
                 color: view===v ? "#ffffff" : "#2d7a2d",
-                cursor:"pointer", fontSize:"0.85rem", fontFamily:"Georgia,serif", fontWeight: view===v ? "bold" : "normal",
+                cursor:"pointer", fontSize:"0.85rem", fontFamily:"Inter,sans-serif", fontWeight: view===v ? "bold" : "normal",
               }}>{label}</button>
             ))}
           </div>
@@ -316,7 +312,7 @@
                         border: type===t ? (t==="F2F" ? "2px solid #2d7a2d" : "2px solid #d4a017") : "1px solid #b8d8b8",
                         borderRadius:"8px",
                         color: type===t ? (t==="F2F" ? "#1f5c1f" : "#8a6800") : "#6b7280",
-                        cursor:"pointer", fontFamily:"Georgia,serif", fontSize:"0.85rem", fontWeight: type===t ? "bold" : "normal",
+                        cursor:"pointer", fontFamily:"Inter,sans-serif", fontSize:"0.85rem", fontWeight: type===t ? "bold" : "normal",
                       }}>{t==="F2F" ? "● Face-to-Face" : "✆ Telephone"}</button>
                     ))}
                   </div>
@@ -354,7 +350,7 @@
                     <button onClick={addPref} style={{
                       background:"#f0f7f0", border:"1px dashed #4a9e4a",
                       borderRadius:"8px", color:"#2d7a2d", cursor:"pointer",
-                      fontSize:"0.8rem", padding:"0.4rem 0.75rem", fontFamily:"Georgia,serif",
+                      fontSize:"0.8rem", padding:"0.4rem 0.75rem", fontFamily:"Inter,sans-serif",
                       width:"100%", marginTop:"0.25rem",
                     }}>+ Add preference</button>
                   )}
@@ -366,7 +362,7 @@
                   border: name.trim() ? "1px solid #1f5c1f" : "1px solid #b8d8b8",
                   borderRadius:"10px", color: name.trim() ? "#ffffff" : "#9ab89a",
                   cursor: name.trim() ? "pointer" : "not-allowed",
-                  fontSize:"0.95rem", fontFamily:"Georgia,serif", fontWeight:"bold",
+                  fontSize:"0.95rem", fontFamily:"Inter,sans-serif", fontWeight:"bold",
                 }}>
                   {editingIdx !== null ? "Update slip" : "Add slip & allocate"}
                 </button>
@@ -375,7 +371,7 @@
                     width:"100%", padding:"0.5rem", marginTop:"0.5rem",
                     background:"#ffffff", border:"1px solid #b8d8b8",
                     borderRadius:"10px", color:"#6b7280", cursor:"pointer",
-                    fontSize:"0.85rem", fontFamily:"Georgia,serif",
+                    fontSize:"0.85rem", fontFamily:"Inter,sans-serif",
                   }}>Cancel edit</button>
                 )}
               </div>
@@ -415,7 +411,7 @@
                                 : "⚠ Could not be placed"}
                             </div>
                           </div>
-                          <button onClick={() => editPupil(idx)} style={{ background:"none", border:"none", color:"#2d7a2d", cursor:"pointer", fontSize:"0.8rem", fontFamily:"Georgia,serif", fontWeight:"bold" }}>Edit</button>
+                          <button onClick={() => editPupil(idx)} style={{ background:"none", border:"none", color:"#2d7a2d", cursor:"pointer", fontSize:"0.8rem", fontFamily:"Inter,sans-serif", fontWeight:"bold" }}>Edit</button>
                           <button onClick={() => deletePupil(idx)} style={{ background:"none", border:"none", color:"#c0392b", cursor:"pointer", fontSize:"0.8rem" }}>✕</button>
                         </div>
                       );
