@@ -80,7 +80,7 @@
       for (const pupil of sorted) {
         let candidates = [];
         for (const pref of pupil.prefs) {
-          const dayOptions = pref.day === 2 ? [0, 1] : [pref.day];
+          const dayOptions = pref.day === 0 ? [0, 1] : [pref.day - 1];
           const bandOptions = pref.band !== null ? [pref.band] : [0,1,2,3];
           for (const d of dayOptions)
             for (const b of bandOptions)
@@ -175,7 +175,7 @@
       }
 
       function removePref(i) {
-        setPrefs(prefs.filter((_, idx) => idx !== i).map((p, idx) => ({ ...p, rank: idx + 1 })));
+        setPrefs(prefs.filter((_, idx) => idx !== i));
       }
 
       function updatePref(i, field, val) {
@@ -228,13 +228,13 @@
           {/* Header */}
           <div style={{ marginBottom:"1.5rem", background:"#2d7a2d", borderRadius:"14px", padding:"1.25rem 1.5rem", color:"#ffffff" }}>
             <div style={{ fontSize:"0.7rem", letterSpacing:"0.2em", color:"rgba(255,255,255,0.7)", textTransform:"uppercase", marginBottom:"0.3rem" }}>
-              Sugar Hill Primary
+              Sugar Hill Primary · Year 5
             </div>
             <h1 style={{ fontSize:"1.6rem", fontWeight:"bold", color:"#ffffff", letterSpacing:"-0.02em" }}>
               Parents' Evening Scheduler
             </h1>
             <div style={{ fontSize:"0.8rem", color:"rgba(255,255,255,0.75)", marginTop:"0.25rem" }}>
-              Wed 25th &amp; Thu 26th March · 3:30pm – 5:20pm
+              Wed 25th &amp; Thu 26th March · 3:30pm – 5:20pm · 24 slots total
             </div>
           </div>
 
