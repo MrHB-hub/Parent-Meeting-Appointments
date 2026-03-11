@@ -48,66 +48,276 @@
       null: { bg: "#f1f5f9", color: "#475569", border: "#cbd5e1" },
     };
 
+    const DEFAULT_TYPE = "F2F";
+    const DEFAULT_PREF = { rank: null, day: 0, band: null };
+    const DAY_INDEXES = DAYS.map((_, idx) => idx);
+    const BAND_INDEXES = SLOT_TIMES.map((_, idx) => idx);
+    const TOTAL_SLOTS = DAY_INDEXES.length * SLOT_TIMES.reduce((sum, slots) => sum + slots.length, 0);
+    const RANK_WEIGHT = { 1: 3000, 2: 2000, 3: 1000, null: 400 };
+    const SCORE_OFFSET = 5000;
+
+    function makeId() {
+      if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function")
+        return crypto.randomUUID();
+      return `pupil-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    }
+
+    function createEmptyPref() {
+      return { ...DEFAULT_PREF };
+    }
+
+    function normalizePrefRank(value) {
+      const num = Number(value);
+      return num === 1 || num === 2 || num === 3 ? num : null;
+    }
+
+    function normalizePrefDay(value) {
+      const num = Number(value);
+      return num === 0 || num === 1 || num === 2 ? num : 0;
+    }
+
+    function normalizePrefBand(value) {
+      if (value === null || value === "" || value === undefined) return null;
+      const num = Number(value);
+      return num === 0 || num === 1 || num === 2 || num === 3 ? num : null;
+    }
+
+    function sanitizePref(pref) {
+      if (!pref || typeof pref !== "object") return null;
+      return {
+        rank: normalizePrefRank(pref.rank),
+        day: normalizePrefDay(pref.day),
+        band: normalizePrefBand(pref.band),
+      };
+    }
+
+    function normalizePrefs(rawPrefs) {
+      const prefs = Array.isArray(rawPrefs) ? rawPrefs : [];
+      const unique = [];
+      const seen = new Set();
+
+      for (const pref of prefs) {
+        const clean = sanitizePref(pref);
+        if (!clean) continue;
+        const key = `${clean.rank ?? "null"}-${clean.day}-${clean.band ?? "any"}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        unique.push(clean);
+      }
+
+      return unique.length > 0 ? unique : [createEmptyPref()];
+    }
+
+    function normalizeType(value) {
+      return value === "Tel" ? "Tel" : DEFAULT_TYPE;
+    }
+
+    function normalizePupil(rawPupil) {
+      if (!rawPupil || typeof rawPupil !== "object") return null;
+      const name = typeof rawPupil.name === "string" ? rawPupil.name.trim() : "";
+      if (!name) return null;
+
+      const id = typeof rawPupil.id === "string" && rawPupil.id.trim() ? rawPupil.id.trim() : makeId();
+      return {
+        id,
+        name,
+        type: normalizeType(rawPupil.type),
+        prefs: normalizePrefs(rawPupil.prefs),
+      };
+    }
+
+    function normalizePupils(rawPupils) {
+      const pupils = Array.isArray(rawPupils) ? rawPupils : [];
+      const seenIds = new Set();
+      const normalized = [];
+
+      for (const rawPupil of pupils) {
+        const pupil = normalizePupil(rawPupil);
+        if (!pupil) continue;
+        let id = pupil.id;
+        while (seenIds.has(id)) id = makeId();
+        seenIds.add(id);
+        normalized.push({ ...pupil, id });
+      }
+
+      return normalized;
+    }
+
+    function slotKey(day, band, slot) {
+      return `${day}-${band}-${slot}`;
+    }
+
     function allSlots() {
       const slots = [];
-      for (let band = 0; band < 4; band++)
-        for (let s = 0; s < 3; s++)
-          for (let day = 0; day < 2; day++)
-            slots.push({ day, band, slot: s, key: `${day}-${band}-${s}` });
+      for (const day of DAY_INDEXES)
+        for (const band of BAND_INDEXES)
+          for (let slot = 0; slot < SLOT_TIMES[band].length; slot++)
+            slots.push({ day, band, slot, key: slotKey(day, band, slot) });
       return slots;
     }
     const ALL_SLOTS = allSlots();
+    const SLOT_INDEX_BY_KEY = new Map(ALL_SLOTS.map((slot, idx) => [slot.key, idx]));
 
-    function scoreSlot(slotKey, schedule) {
-      const [day, band, slot] = slotKey.split("-").map(Number);
-      const timeScore = band * 30 + slot * 10;
-      const latePenalty = band === 3 ? 200 : 0;
-      const neighbours = [
-        `${day}-${band}-${slot - 1}`,
-        `${day}-${band}-${slot + 1}`,
-        `${day}-${band - 1}-2`,
-        `${day}-${band + 1}-0`,
-      ];
-      const clusterBonus = neighbours.some(n => schedule[n]) ? -15 : 0;
-      return timeScore + latePenalty + clusterBonus;
+    function preferencePriority(rank) {
+      if (rank === 1) return 4;
+      if (rank === 2) return 3;
+      if (rank === 3) return 2;
+      return 1;
+    }
+
+    function preferenceScore(rank, band, slot) {
+      const timeBonus = 120 - (band * 30 + slot * 10);
+      return (RANK_WEIGHT[rank] ?? RANK_WEIGHT.null) + timeBonus;
+    }
+
+    function availabilityFromPrefs(prefs) {
+      const bestBySlot = new Map();
+
+      for (const pref of normalizePrefs(prefs)) {
+        const days = pref.day === 0 ? DAY_INDEXES : [pref.day - 1];
+        const bands = pref.band === null ? BAND_INDEXES : [pref.band];
+
+        for (const day of days)
+          for (const band of bands)
+            for (let slot = 0; slot < SLOT_TIMES[band].length; slot++) {
+              const key = slotKey(day, band, slot);
+              const prev = bestBySlot.get(key);
+              if (!prev || preferencePriority(pref.rank) > preferencePriority(prev.rank))
+                bestBySlot.set(key, { key, day, band, slot, rank: pref.rank });
+            }
+      }
+
+      return [...bestBySlot.values()];
+    }
+
+    // Successive shortest augmenting path (min-cost max-flow):
+    // maximize number of placed pupils, then maximize total preference score.
+    function createMinCostMaxFlow(nodeCount) {
+      const graph = Array.from({ length: nodeCount }, () => []);
+
+      function addEdge(from, to, cap, cost) {
+        const fwd = { to, rev: graph[to].length, cap, cost };
+        const rev = { to: from, rev: graph[from].length, cap: 0, cost: -cost };
+        graph[from].push(fwd);
+        graph[to].push(rev);
+        return fwd;
+      }
+
+      function solve(source, sink, maxFlow = Infinity) {
+        let flow = 0;
+        let cost = 0;
+        const potential = Array(nodeCount).fill(0);
+
+        while (flow < maxFlow) {
+          const dist = Array(nodeCount).fill(Infinity);
+          const prevNode = Array(nodeCount).fill(-1);
+          const prevEdge = Array(nodeCount).fill(-1);
+          const used = Array(nodeCount).fill(false);
+          dist[source] = 0;
+
+          for (let i = 0; i < nodeCount; i++) {
+            let v = -1;
+            for (let n = 0; n < nodeCount; n++) {
+              if (used[n]) continue;
+              if (v === -1 || dist[n] < dist[v]) v = n;
+            }
+
+            if (v === -1 || dist[v] === Infinity) break;
+            used[v] = true;
+
+            const edges = graph[v];
+            for (let e = 0; e < edges.length; e++) {
+              const edge = edges[e];
+              if (edge.cap <= 0) continue;
+              const nextDist = dist[v] + edge.cost + potential[v] - potential[edge.to];
+              if (nextDist < dist[edge.to]) {
+                dist[edge.to] = nextDist;
+                prevNode[edge.to] = v;
+                prevEdge[edge.to] = e;
+              }
+            }
+          }
+
+          if (dist[sink] === Infinity) break;
+
+          for (let n = 0; n < nodeCount; n++)
+            if (dist[n] < Infinity) potential[n] += dist[n];
+
+          let add = maxFlow - flow;
+          for (let v = sink; v !== source; v = prevNode[v]) {
+            const edge = graph[prevNode[v]][prevEdge[v]];
+            if (edge.cap < add) add = edge.cap;
+          }
+
+          if (add <= 0 || !Number.isFinite(add)) break;
+
+          for (let v = sink; v !== source; v = prevNode[v]) {
+            const edge = graph[prevNode[v]][prevEdge[v]];
+            edge.cap -= add;
+            graph[v][edge.rev].cap += add;
+            cost += add * edge.cost;
+          }
+          flow += add;
+        }
+
+        return { flow, cost };
+      }
+
+      return { addEdge, solve };
     }
 
     function allocate(pupils) {
       const schedule = {};
       const result = {};
-      const sorted = [...pupils].sort((a, b) => a.prefs.length - b.prefs.length);
 
-      for (const pupil of sorted) {
-        let candidates = [];
-        for (const pref of pupil.prefs) {
-          const dayOptions = pref.day === 0 ? [0, 1] : [pref.day - 1];
-          const bandOptions = pref.band !== null ? [pref.band] : [0,1,2,3];
-          for (const d of dayOptions)
-            for (const b of bandOptions)
-              for (let s = 0; s < 3; s++) {
-                const key = `${d}-${b}-${s}`;
-                if (!schedule[key]) candidates.push({ key, day: d, band: b, slot: s, rank: pref.rank });
-              }
+      if (!Array.isArray(pupils) || pupils.length === 0)
+        return { result, schedule };
+
+      const source = 0;
+      const pupilStart = 1;
+      const slotStart = pupilStart + pupils.length;
+      const sink = slotStart + ALL_SLOTS.length;
+      const network = createMinCostMaxFlow(sink + 1);
+      const matchEdgesById = new Map();
+
+      for (let i = 0; i < pupils.length; i++) {
+        result[pupils[i].id] = null;
+        network.addEdge(source, pupilStart + i, 1, 0);
+      }
+
+      for (let i = 0; i < ALL_SLOTS.length; i++)
+        network.addEdge(slotStart + i, sink, 1, 0);
+
+      for (let i = 0; i < pupils.length; i++) {
+        const pupil = pupils[i];
+        const edges = [];
+        const availableSlots = availabilityFromPrefs(pupil.prefs);
+
+        for (const option of availableSlots) {
+          const slotIdx = SLOT_INDEX_BY_KEY.get(option.key);
+          if (slotIdx === undefined) continue;
+          const score = preferenceScore(option.rank, option.band, option.slot);
+          const cost = SCORE_OFFSET - score;
+          const edge = network.addEdge(pupilStart + i, slotStart + slotIdx, 1, cost);
+          edges.push({ edge, option });
         }
 
-        if (candidates.length === 0)
-          candidates = ALL_SLOTS.filter(sl => !schedule[sl.key]).map(sl => ({ ...sl, rank: 99 }));
-
-        if (candidates.length === 0) { result[pupil.name] = null; continue; }
-
-        candidates.sort((a, b) => {
-          // null rank = no preference, treat as low priority but still prefer earlier slots
-          const ra = a.rank === null ? 5 : a.rank;
-          const rb = b.rank === null ? 5 : b.rank;
-          const rankDiff = ra - rb;
-          if (rankDiff !== 0) return rankDiff;
-          return scoreSlot(a.key, schedule) - scoreSlot(b.key, schedule);
-        });
-
-        const best = candidates[0];
-        schedule[best.key] = pupil.name;
-        result[pupil.name] = best;
+        matchEdgesById.set(pupil.id, edges);
       }
+
+      network.solve(source, sink, Math.min(pupils.length, ALL_SLOTS.length));
+
+      for (const pupil of pupils) {
+        const edges = matchEdgesById.get(pupil.id) || [];
+        for (const { edge, option } of edges) {
+          if (edge.cap === 0) {
+            result[pupil.id] = option;
+            schedule[option.key] = pupil.id;
+            break;
+          }
+        }
+      }
+
       return { result, schedule };
     }
 
@@ -115,10 +325,16 @@
       const [pupils, setPupils] = useState([]);
       const [view, setView] = useState("input");
       const [name, setName] = useState("");
-      const [type, setType] = useState("F2F");
-      const [prefs, setPrefs] = useState([{ rank: null, day: 0, band: null }]);
-      const [editingIdx, setEditingIdx] = useState(null);
+      const [type, setType] = useState(DEFAULT_TYPE);
+      const [prefs, setPrefs] = useState([createEmptyPref()]);
+      const [editingId, setEditingId] = useState(null);
       const [saveMsg, setSaveMsg] = useState("");
+
+      function resetForm() {
+        setName("");
+        setType(DEFAULT_TYPE);
+        setPrefs([createEmptyPref()]);
+      }
 
       function saveData() {
         const json = JSON.stringify({ pupils }, null, 2);
@@ -140,11 +356,21 @@
         reader.onload = ev => {
           try {
             const data = JSON.parse(ev.target.result);
-            if (data.pupils) {
-              setPupils(data.pupils);
-              setSaveMsg("✓ Loaded!");
-              setTimeout(() => setSaveMsg(""), 2000);
-            }
+            const rawPupils = Array.isArray(data) ? data : (data && Array.isArray(data.pupils) ? data.pupils : null);
+            if (!rawPupils) throw new Error("Invalid data format");
+            const normalized = normalizePupils(rawPupils);
+            setPupils(normalized);
+            setEditingId(null);
+            resetForm();
+            const dropped = rawPupils.length - normalized.length;
+            const loadedLabel = `slip${normalized.length === 1 ? "" : "s"}`;
+            const skippedLabel = `invalid entr${dropped === 1 ? "y" : "ies"} skipped`;
+            setSaveMsg(
+              dropped > 0
+                ? `✓ Loaded ${normalized.length} ${loadedLabel} (${dropped} ${skippedLabel})`
+                : `✓ Loaded ${normalized.length} ${loadedLabel}`
+            );
+            setTimeout(() => setSaveMsg(""), 2500);
           } catch {
             setSaveMsg("⚠ Could not read file");
             setTimeout(() => setSaveMsg(""), 3000);
@@ -159,55 +385,82 @@
       function buildGrid() {
         const grid = {};
         pupils.forEach(p => {
-          const slot = allocation[p.name];
-          if (slot) grid[slot.key] = { name: p.name, type: p.type };
+          const slot = allocation[p.id];
+          if (slot) grid[slot.key] = { id: p.id, name: p.name, type: p.type };
         });
         return grid;
       }
 
       const grid = buildGrid();
-      const placed = pupils.filter(p => allocation[p.name] !== null);
-      const unplaced = pupils.filter(p => allocation[p.name] === null);
+      const placed = pupils.filter(p => allocation[p.id]);
+      const unplaced = pupils.filter(p => !allocation[p.id]);
 
       function addPref() {
-        if (prefs.length >= 3) return;
-        setPrefs([...prefs, { rank: null, day: 0, band: null }]);
+        setPrefs(prev => [...prev, createEmptyPref()]);
       }
 
       function removePref(i) {
-        setPrefs(prefs.filter((_, idx) => idx !== i));
+        setPrefs(prev => {
+          const updated = prev.filter((_, idx) => idx !== i);
+          return updated.length > 0 ? updated : [createEmptyPref()];
+        });
       }
 
       function updatePref(i, field, val) {
-        const updated = [...prefs];
-        updated[i] = { ...updated[i], [field]: val };
-        setPrefs(updated);
+        setPrefs(prev => {
+          if (!prev[i]) return prev;
+          const updated = [...prev];
+          if (field === "rank") updated[i] = { ...updated[i], rank: normalizePrefRank(val) };
+          if (field === "day") updated[i] = { ...updated[i], day: normalizePrefDay(val) };
+          if (field === "band") updated[i] = { ...updated[i], band: normalizePrefBand(val) };
+          return updated;
+        });
       }
 
       function submitPupil() {
-        if (!name.trim()) return;
-        const pupil = { name: name.trim(), type, prefs };
-        if (editingIdx !== null) {
-          const updated = [...pupils];
-          updated[editingIdx] = pupil;
-          setPupils(updated);
-          setEditingIdx(null);
-        } else {
-          setPupils([...pupils, pupil]);
-        }
-        setName(""); setType("F2F"); setPrefs([{ rank: null, day: 0, band: null }]);
+        const trimmedName = name.trim();
+        if (!trimmedName) return;
+
+        const pupil = {
+          id: editingId || makeId(),
+          name: trimmedName,
+          type: normalizeType(type),
+          prefs: normalizePrefs(prefs),
+        };
+
+        setPupils(prev => {
+          if (!editingId) return [...prev, pupil];
+          let updatedExisting = false;
+          const updated = prev.map(existing => {
+            if (existing.id !== editingId) return existing;
+            updatedExisting = true;
+            return pupil;
+          });
+          return updatedExisting ? updated : [...updated, pupil];
+        });
+
+        setEditingId(null);
+        resetForm();
       }
 
-      function editPupil(idx) {
-        const p = pupils[idx];
-        setName(p.name); setType(p.type); setPrefs(p.prefs);
-        setEditingIdx(idx);
+      function editPupil(pupilId) {
+        const pupil = pupils.find(p => p.id === pupilId);
+        if (!pupil) return;
+        setName(pupil.name);
+        setType(normalizeType(pupil.type));
+        setPrefs(normalizePrefs(pupil.prefs));
+        setEditingId(pupilId);
         setView("input");
       }
 
-      function deletePupil(idx) {
-        setPupils(pupils.filter((_, i) => i !== idx));
-        if (editingIdx === idx) { setEditingIdx(null); setName(""); setType("F2F"); setPrefs([{ rank: null, day: 0, band: null }]); }
+      function cancelEdit() {
+        setEditingId(null);
+        resetForm();
+      }
+
+      function deletePupil(pupilId) {
+        setPupils(prev => prev.filter(p => p.id !== pupilId));
+        if (editingId === pupilId) cancelEdit();
       }
 
       const inp = {
@@ -234,7 +487,7 @@
               Parents' Evening Scheduler
             </h1>
             <div style={{ fontSize:"0.8rem", color:"rgba(255,255,255,0.75)", marginTop:"0.25rem" }}>
-              Wed 25th &amp; Thu 26th March · 3:30pm – 5:20pm · 24 slots total
+              Wed 25th &amp; Thu 26th March · 3:30pm – 5:20pm · {TOTAL_SLOTS} slots total
             </div>
           </div>
 
@@ -265,7 +518,7 @@
             {[
               { label:"Slips in",   val: pupils.length,          col:"#2d7a2d" },
               { label:"Placed",     val: placed.length,          col:"#1f5c1f" },
-              { label:"Slots free", val: 24 - placed.length,     col:"#6b7280" },
+              { label:"Slots free", val: TOTAL_SLOTS - placed.length, col:"#6b7280" },
               { label:"Unplaced",   val: unplaced.length,        col:"#c0392b" },
             ].map(s => (
               <div key={s.label} style={{ background:"#ffffff", border:"1px solid #b8d8b8", borderRadius:"10px", padding:"0.6rem 1rem", minWidth:"90px" }}>
@@ -295,7 +548,7 @@
               {/* Form */}
               <div style={{ background:"#ffffff", border:"1px solid #b8d8b8", borderRadius:"14px", padding:"1.25rem" }}>
                 <h2 style={{ margin:"0 0 1rem", fontSize:"1rem", color:"#1a3a1a", fontWeight:"bold" }}>
-                  {editingIdx !== null ? "✏️ Edit slip" : "➕ New slip"}
+                  {editingId !== null ? "✏️ Edit slip" : "➕ New slip"}
                 </h2>
 
                 <div style={{ marginBottom:"0.75rem" }}>
@@ -349,14 +602,12 @@
                       </div>
                     );
                   })}
-                  {prefs.length < 3 && (
-                    <button onClick={addPref} style={{
-                      background:"#f0f7f0", border:"1px dashed #4a9e4a",
-                      borderRadius:"8px", color:"#2d7a2d", cursor:"pointer",
-                      fontSize:"0.8rem", padding:"0.4rem 0.75rem", fontFamily:"Inter,sans-serif",
-                      width:"100%", marginTop:"0.25rem",
-                    }}>+ Add preference</button>
-                  )}
+                  <button onClick={addPref} style={{
+                    background:"#f0f7f0", border:"1px dashed #4a9e4a",
+                    borderRadius:"8px", color:"#2d7a2d", cursor:"pointer",
+                    fontSize:"0.8rem", padding:"0.4rem 0.75rem", fontFamily:"Inter,sans-serif",
+                    width:"100%", marginTop:"0.25rem",
+                  }}>+ Add preference</button>
                 </div>
 
                 <button onClick={submitPupil} disabled={!name.trim()} style={{
@@ -367,10 +618,10 @@
                   cursor: name.trim() ? "pointer" : "not-allowed",
                   fontSize:"0.95rem", fontFamily:"Inter,sans-serif", fontWeight:"bold",
                 }}>
-                  {editingIdx !== null ? "Update slip" : "Add slip & allocate"}
+                  {editingId !== null ? "Update slip" : "Add slip & allocate"}
                 </button>
-                {editingIdx !== null && (
-                  <button onClick={() => { setEditingIdx(null); setName(""); setType("F2F"); setPrefs([{rank:null,day:0,band:null}]); }} style={{
+                {editingId !== null && (
+                  <button onClick={cancelEdit} style={{
                     width:"100%", padding:"0.5rem", marginTop:"0.5rem",
                     background:"#ffffff", border:"1px solid #b8d8b8",
                     borderRadius:"10px", color:"#6b7280", cursor:"pointer",
@@ -388,11 +639,11 @@
                   </div>
                 ) : (
                   <div style={{ display:"flex", flexDirection:"column", gap:"0.5rem", maxHeight:"65vh", overflowY:"auto" }}>
-                    {pupils.map((p, idx) => {
-                      const slot = allocation[p.name];
+                    {pupils.map(p => {
+                      const slot = allocation[p.id];
                       const isPlaced = slot !== null;
                       return (
-                        <div key={p.name} style={{
+                        <div key={p.id} style={{
                           background: isPlaced ? "#f0faf0" : "#fff5f5",
                           border: isPlaced ? "1px solid #a8d8a8" : "1px solid #f5b8b8",
                           borderRadius:"10px", padding:"0.75rem 1rem",
@@ -414,8 +665,8 @@
                                 : "⚠ Could not be placed"}
                             </div>
                           </div>
-                          <button onClick={() => editPupil(idx)} style={{ background:"none", border:"none", color:"#2d7a2d", cursor:"pointer", fontSize:"0.8rem", fontFamily:"Inter,sans-serif", fontWeight:"bold" }}>Edit</button>
-                          <button onClick={() => deletePupil(idx)} style={{ background:"none", border:"none", color:"#c0392b", cursor:"pointer", fontSize:"0.8rem" }}>✕</button>
+                          <button onClick={() => editPupil(p.id)} style={{ background:"none", border:"none", color:"#2d7a2d", cursor:"pointer", fontSize:"0.8rem", fontFamily:"Inter,sans-serif", fontWeight:"bold" }}>Edit</button>
+                          <button onClick={() => deletePupil(p.id)} style={{ background:"none", border:"none", color:"#c0392b", cursor:"pointer", fontSize:"0.8rem" }}>✕</button>
                         </div>
                       );
                     })}
@@ -474,7 +725,7 @@
 
           {unplaced.length > 0 && (
             <div style={{ marginTop:"1.5rem", background:"#fff5f5", border:"1px solid #f5b8b8", borderRadius:"10px", padding:"0.75rem 1rem", fontSize:"0.85rem", color:"#c0392b" }}>
-              ⚠ <strong>{unplaced.length} pupil{unplaced.length > 1 ? "s" : ""} could not be placed</strong> in a preferred slot — try editing their preferences.{" "}
+              ⚠ <strong>{unplaced.length} pupil{unplaced.length > 1 ? "s" : ""} could not be placed</strong> within their available day/time options.{" "}
               {unplaced.map(p => p.name).join(", ")}
             </div>
           )}
