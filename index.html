@@ -15,6 +15,17 @@
     ::-webkit-scrollbar-track { background: #e8f5e8; }
     ::-webkit-scrollbar-thumb { background: #4a9e4a; border-radius: 3px; }
     input::placeholder { color: #9ab89a; }
+
+    @media print {
+      @page { margin: 12mm; }
+      body { background: #ffffff !important; }
+      .no-print { display: none !important; }
+      .print-schedule {
+        margin: 0 !important;
+        grid-template-columns: 1fr 1fr !important;
+        gap: 10mm !important;
+      }
+    }
   </style>
 </head>
 <body>
@@ -463,6 +474,10 @@
         if (editingId === pupilId) cancelEdit();
       }
 
+      function printSchedule() {
+        window.print();
+      }
+
       const inp = {
         background: "#ffffff",
         border: "1px solid #b8d8b8",
@@ -479,7 +494,7 @@
         <div style={{ minHeight:"100vh", fontFamily:"Inter,sans-serif", color:"#1a3a1a", padding:"1.5rem" }}>
 
           {/* Header */}
-          <div style={{ marginBottom:"1.5rem", background:"#2d7a2d", borderRadius:"14px", padding:"1.25rem 1.5rem", color:"#ffffff" }}>
+          <div className="no-print" style={{ marginBottom:"1.5rem", background:"#2d7a2d", borderRadius:"14px", padding:"1.25rem 1.5rem", color:"#ffffff" }}>
             <div style={{ fontSize:"0.7rem", letterSpacing:"0.2em", color:"rgba(255,255,255,0.7)", textTransform:"uppercase", marginBottom:"0.3rem" }}>
               Sugar Hill Primary · Year 5
             </div>
@@ -492,7 +507,7 @@
           </div>
 
           {/* Save / Load */}
-          <div style={{ display:"flex", gap:"0.6rem", alignItems:"center", marginBottom:"1.25rem", flexWrap:"wrap" }}>
+          <div className="no-print" style={{ display:"flex", gap:"0.6rem", alignItems:"center", marginBottom:"1.25rem", flexWrap:"wrap" }}>
             <button onClick={saveData} style={{
               background:"#2d7a2d", border:"1px solid #1f5c1f",
               borderRadius:"8px", padding:"0.45rem 1rem", color:"#ffffff",
@@ -514,7 +529,7 @@
           </div>
 
           {/* Stats */}
-          <div style={{ display:"flex", gap:"0.75rem", marginBottom:"1.5rem", flexWrap:"wrap" }}>
+          <div className="no-print" style={{ display:"flex", gap:"0.75rem", marginBottom:"1.5rem", flexWrap:"wrap" }}>
             {[
               { label:"Slips in",   val: pupils.length,          col:"#2d7a2d" },
               { label:"Placed",     val: placed.length,          col:"#1f5c1f" },
@@ -529,7 +544,7 @@
           </div>
 
           {/* Tabs */}
-          <div style={{ display:"flex", gap:"0.5rem", marginBottom:"1.5rem" }}>
+          <div className="no-print" style={{ display:"flex", gap:"0.5rem", marginBottom:"1.5rem" }}>
             {[["input","📝 Add Slips"],["schedule","📅 Schedule"]].map(([v, label]) => (
               <button key={v} onClick={() => setView(v)} style={{
                 background: view===v ? "#2d7a2d" : "#ffffff",
@@ -543,7 +558,7 @@
 
           {/* ── INPUT VIEW ── */}
           {view === "input" && (
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"1.5rem" }}>
+            <div className="no-print" style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"1.5rem" }}>
 
               {/* Form */}
               <div style={{ background:"#ffffff", border:"1px solid #b8d8b8", borderRadius:"14px", padding:"1.25rem" }}>
@@ -678,53 +693,62 @@
 
           {/* ── SCHEDULE VIEW ── */}
           {view === "schedule" && (
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"1.5rem" }}>
-              {DAYS.map((dayLabel, dayIdx) => (
-                <div key={dayIdx} style={{ background:"#ffffff", border:"1px solid #b8d8b8", borderRadius:"14px", overflow:"hidden" }}>
-                  <div style={{ background:"#2d7a2d", padding:"0.75rem 1rem", fontSize:"0.95rem", fontWeight:"bold", color:"#ffffff", borderBottom:"1px solid #1f5c1f" }}>
-                    {dayIdx === 0 ? "Wednesday 25th March" : "Thursday 26th March"}
-                  </div>
-                  {BAND_LABELS.map((band, bandIdx) => (
-                    <div key={bandIdx}>
-                      <div style={{ background:"#e8f5e8", padding:"0.4rem 1rem", fontSize:"0.72rem", color:"#1f5c1f", fontWeight:"bold", letterSpacing:"0.05em", borderBottom:"1px solid #c8e8c8" }}>
-                        {band}
-                      </div>
-                      {SLOT_TIMES[bandIdx].map((time, slotIdx) => {
-                        const key = `${dayIdx}-${bandIdx}-${slotIdx}`;
-                        const appt = grid[key];
-                        return (
-                          <div key={slotIdx} style={{
-                            display:"flex", alignItems:"center", gap:"0.75rem",
-                            padding:"0.5rem 1rem",
-                            borderBottom:"1px solid #f0f7f0",
-                            background: appt ? (appt.type==="F2F" ? "#f0faf0" : "#fffbe6") : "#ffffff",
-                          }}>
-                            <span style={{ fontSize:"0.78rem", color:"#9ab89a", minWidth:"52px", fontFamily:"monospace" }}>{time}</span>
-                            {appt ? (
-                              <>
-                                <span style={{ fontSize:"0.88rem", fontWeight:"bold", flex:1, color: appt.type==="F2F" ? "#1f5c1f" : "#8a6800" }}>{appt.name}</span>
-                                <span style={{
-                                  fontSize:"0.68rem", padding:"1px 7px", borderRadius:"10px",
-                                  background: appt.type==="F2F" ? "#e8f5e8" : "#fffbe6",
-                                  color: appt.type==="F2F" ? "#1f5c1f" : "#8a6800",
-                                  border: appt.type==="F2F" ? "1px solid #a8d8a8" : "1px solid #e2c96a",
-                                }}>{appt.type==="F2F" ? "● F2F" : "✆ Tel"}</span>
-                              </>
-                            ) : (
-                              <span style={{ fontSize:"0.8rem", color:"#c8e8c8", fontStyle:"italic" }}>—</span>
-                            )}
-                          </div>
-                        );
-                      })}
+            <>
+              <div className="no-print" style={{ display:"flex", justifyContent:"flex-end", marginBottom:"0.9rem" }}>
+                <button onClick={printSchedule} style={{
+                  background:"#2d7a2d", border:"1px solid #1f5c1f",
+                  borderRadius:"8px", padding:"0.45rem 1rem", color:"#ffffff",
+                  cursor:"pointer", fontSize:"0.82rem", fontFamily:"Inter,sans-serif", fontWeight:"bold",
+                }}>🖨 Print schedule</button>
+              </div>
+              <div className="print-schedule" style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"1.5rem" }}>
+                {DAYS.map((dayLabel, dayIdx) => (
+                  <div key={dayIdx} style={{ background:"#ffffff", border:"1px solid #b8d8b8", borderRadius:"14px", overflow:"hidden" }}>
+                    <div style={{ background:"#2d7a2d", padding:"0.75rem 1rem", fontSize:"0.95rem", fontWeight:"bold", color:"#ffffff", borderBottom:"1px solid #1f5c1f" }}>
+                      {dayIdx === 0 ? "Wednesday 25th March" : "Thursday 26th March"}
                     </div>
-                  ))}
-                </div>
-              ))}
-            </div>
+                    {BAND_LABELS.map((band, bandIdx) => (
+                      <div key={bandIdx}>
+                        <div style={{ background:"#e8f5e8", padding:"0.4rem 1rem", fontSize:"0.72rem", color:"#1f5c1f", fontWeight:"bold", letterSpacing:"0.05em", borderBottom:"1px solid #c8e8c8" }}>
+                          {band}
+                        </div>
+                        {SLOT_TIMES[bandIdx].map((time, slotIdx) => {
+                          const key = `${dayIdx}-${bandIdx}-${slotIdx}`;
+                          const appt = grid[key];
+                          return (
+                            <div key={slotIdx} style={{
+                              display:"flex", alignItems:"center", gap:"0.75rem",
+                              padding:"0.5rem 1rem",
+                              borderBottom:"1px solid #f0f7f0",
+                              background: appt ? (appt.type==="F2F" ? "#f0faf0" : "#fffbe6") : "#ffffff",
+                            }}>
+                              <span style={{ fontSize:"0.78rem", color:"#9ab89a", minWidth:"52px", fontFamily:"monospace" }}>{time}</span>
+                              {appt ? (
+                                <>
+                                  <span style={{ fontSize:"0.88rem", fontWeight:"bold", flex:1, color: appt.type==="F2F" ? "#1f5c1f" : "#8a6800" }}>{appt.name}</span>
+                                  <span style={{
+                                    fontSize:"0.68rem", padding:"1px 7px", borderRadius:"10px",
+                                    background: appt.type==="F2F" ? "#e8f5e8" : "#fffbe6",
+                                    color: appt.type==="F2F" ? "#1f5c1f" : "#8a6800",
+                                    border: appt.type==="F2F" ? "1px solid #a8d8a8" : "1px solid #e2c96a",
+                                  }}>{appt.type==="F2F" ? "● F2F" : "✆ Tel"}</span>
+                                </>
+                              ) : (
+                                <span style={{ fontSize:"0.8rem", color:"#c8e8c8", fontStyle:"italic" }}>—</span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </>
           )}
 
           {unplaced.length > 0 && (
-            <div style={{ marginTop:"1.5rem", background:"#fff5f5", border:"1px solid #f5b8b8", borderRadius:"10px", padding:"0.75rem 1rem", fontSize:"0.85rem", color:"#c0392b" }}>
+            <div className="no-print" style={{ marginTop:"1.5rem", background:"#fff5f5", border:"1px solid #f5b8b8", borderRadius:"10px", padding:"0.75rem 1rem", fontSize:"0.85rem", color:"#c0392b" }}>
               ⚠ <strong>{unplaced.length} pupil{unplaced.length > 1 ? "s" : ""} could not be placed</strong> within their available day/time options.{" "}
               {unplaced.map(p => p.name).join(", ")}
             </div>
